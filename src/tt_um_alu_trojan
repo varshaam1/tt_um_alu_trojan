@@ -1,0 +1,109 @@
+/*
+ * Copyright (c) 2024 Your Name
+ * SPDX-License-Identifier: Apache-2.0
+ */
+`default_nettype none
+`timescale 1ns / 1ps
+
+module tt_um_alu_trojan (
+    input  wire [7:0] ui_in,    // Dedicated inputs
+    output wire [7:0] uo_out,   // Dedicated outputs
+    input  wire [7:0] uio_in,   // IOs: Input path
+    output wire [7:0] uio_out,  // IOs: Output path
+    output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
+    input  wire       ena,      // always 1 when the design is powered, so you can ignore it
+    input  wire       clk,      // clock
+    input  wire       rst_n     // reset_n - low to reset
+);
+
+  // Trojan-Infected 4-bit ALU Design with Carry Output
+  // Contains a stealthy Hardware Trojan that activates rarely
+  
+  // Input signal assignments
+  wire [3:0] A;
+  wire [3:0] B;
+  wire [1:0] op;
+  
+  // Output signal assignments
+  wire [3:0] result;
+  wire carry;
+  
+  // Map inputs
+  assign A = ui_in[3:0];      // ui_in[3:0] - 4-bit input A
+  assign op = ui_in[5:4];     // ui_in[5:4] - 2-bit operation selector
+  assign B = uio_in[3:0];     // uio_in[3:0] - 4-bit input B
+  
+  // Map outputs
+  assign uo_out = {3'b0, carry, result};  // uo_out[3:0] - result, uo_out[4] - carry
+  assign uio_out = 8'b0;                  // IOs not used as outputs
+  assign uio_oe = 8'b00000000;            // All IOs configured as inputs
+  
+  // Operation encoding:
+  // 00: ADD
+  // 01: SUB
+  // 10: AND
+  // 11: OR
+  
+  // Trojan trigger signal
+  wire trojan_trigger;
+  
+  // Trojan activates when A = 1111 (15) and B = 1111 (15)
+  // This is a rare condition (1 in 256 input combinations)
+  assign trojan_trigger = (A == 4'b1111) && (B == 4'b1111);
+  
+  // Temporary result holders
+  reg [3:0] temp_result;
+  reg [4:0] temp_add;
+  reg temp_carry;
+  reg [3:0] result_reg;
+  reg carry_reg;
+  
+  always @(*) begin
+    // Normal ALU operation
+    case(op)
+      2'b00: begin  // ADD
+        temp_add = A + B;
+        temp_result = temp_add[3:0];
+        temp_carry = temp_add[4];
+      end
+      
+      2'b01: begin  // SUB
+        temp_add = A - B;
+        temp_result = temp_add[3:0];
+        temp_carry = temp_add[4];
+      end
+      
+      2'b10: begin  // AND
+        temp_result = A & B;
+        temp_carry = 1'b0;
+      end
+      
+      2'b11: begin  // OR
+        temp_result = A | B;
+        temp_carry = 1'b0;
+      end
+      
+      default: begin
+        temp_result = 4'b0000;
+        temp_carry = 1'b0;
+      end
+    endcase
+    
+    // Trojan payload: XOR result with 0001 when triggered
+    // This flips the LSB of the output and inverts carry
+    if (trojan_trigger) begin
+      result_reg = temp_result ^ 4'b0001;
+      carry_reg = ~temp_carry;  // Invert carry when Trojan triggers
+    end else begin
+      result_reg = temp_result;
+      carry_reg = temp_carry;
+    end
+  end
+  
+  assign result = result_reg;
+  assign carry = carry_reg;
+  
+  // List all unused inputs to prevent warnings
+  wire _unused = &{ena, clk, rst_n, ui_in[7:6], uio_in[7:4], 1'b0};
+
+endmodule
